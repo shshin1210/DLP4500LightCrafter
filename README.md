@@ -18,4 +18,19 @@ Follow the Install and Usage part introduced in [SivyerLab](https://github.com/S
 
 # Pattern sequence mode
 
-Run ```main.py```
+Run ```main.py``` to test pattern sequence mode.
+
+I have added following functions to implement pattern sequence mode. Check the description for each functions in ```pycrafter4500.py```
+
+- set_pattern_trigger_mode
+  
+- set_led_current
+
+- set_led_pwm_polarity
+
+- set_led_control_mode
+ 
+- send_pattern_image_index
+
+- pattern_sequence_final
+- 
