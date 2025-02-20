@@ -14,7 +14,7 @@ Check the documents and code to modify more...
 
 # Install and Usage
 
-Followw the Install and Usage part introduced in [SivyerLab](https://github.com/SivyerLab/pyCrafter4500).
+Follow the Install and Usage part introduced in [SivyerLab](https://github.com/SivyerLab/pyCrafter4500).
 
 # Pattern sequence mode
 
