@@ -1,6 +1,6 @@
 # DLP4500LightCrafter
 
-This repository provides python code Python USB controller for the TI DLP LightCrafter 4500. The main purpose is to use high speed pattern sequence mode, projecting patterns from pre-loaded patterns in firmware. Please relate to documents for pre-loading patterns in firmware.
+This repository provides python code Python USB controller for the TI DLP LightCrafter 4500. The main purpose is to use high speed pattern sequence mode, projecting patterns from pre-loaded patterns in the firmware. Please relate to documents from [Texas Instruments](https://www.ti.com/lit/ug/dlpu011e/dlpu011e.pdf) for pre-loading patterns in the firmware.
 
 The core program is borrowed from SivyerLab/pyCrafter4500 developed by [SivyerLab](https://github.com/SivyerLab/pyCrafter4500). I have modified the original python code, adding functions needed for pattern sequence mode. I acknowledge and respect his pioneering work.
 
