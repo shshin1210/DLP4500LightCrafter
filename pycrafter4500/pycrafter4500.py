@@ -7,7 +7,9 @@ from math import floor
 import usb.core
 import usb.util
 from usb.core import USBError
-
+from usb.backend import libusb1
+import libusb_package
+    
 """
 Adapted for lcr4500 from https://github.com/csi-dcsc/Pycrafter6500
 
@@ -84,7 +86,26 @@ def connect_usb():
 
     :yields: USB device.
     """
-    device = usb.core.find(idVendor=0x0451, idProduct=0x6401)
+    ## debug ##
+    backend = libusb1.get_backend(find_library=libusb_package.find_library)
+
+    vendor_id = 0x0451 # 0x2708
+    product_id = 0x6401 # 0x0003
+
+    device = usb.core.find(
+                idVendor=vendor_id,
+                idProduct=product_id,
+                backend=backend,
+            )
+    if device is None:
+        raise RuntimeError("DLP4500 device not found. Check USB connection")
+    else:
+        for cfg in device:
+            for intf in cfg:
+                for ep in intf:
+                    print(f"Endpoint: {ep.bEndpointAddress}, Attributes: {ep.bmAttributes}")
+       
+    # device = usb.core.find(idVendor=0x0451, idProduct=0x6401)
     device.set_configuration()
 
     lcr = dlpc350(device)
@@ -177,8 +198,7 @@ class dlpc350(object):
                 self.dlpc.write(1, buffer)
 
         # wait a bit between commands
-        # time.sleep(0.02)
-        # time.sleep(0.02)
+        time.sleep(0.02)
 
         # done writing, read feedback from dlpc
         try:
@@ -273,9 +293,27 @@ class dlpc350(object):
 
         self.command('w', 0x00, 0x1a, 0x1b, [mode])
 
-    def set_pattern_input_source(self, mode='video'):
+    def set_pattern_input_source(self, mode='flash'):
         """
-        Selects the input type for pattern sequence.
+        Selects the input source.
+
+        (USB: CMD2: 0x1A, CMD3: 0x00)
+
+        :param int mode:
+            :0: "parallel interface with 8-bit"
+            :1: "internal test pattern"
+            :2: "Flash, images are 24-bit singel-frame"
+        """
+        modes = ['parallel', 'internal', 'flash']
+        if mode in modes:
+            mode = modes.index(mode)
+
+        # Hard coding
+        self.command('w', 0x00, 0x1a, 0x00, [mode])
+
+    def set_pattern_display_data_input_source(self, mode='flash'):
+        """
+        The Pattern Display Data Input Source command selects the source of the data for pattern display
 
         (USB: CMD2: 0x1A, CMD3: 0x22)
 
@@ -288,8 +326,8 @@ class dlpc350(object):
             mode = modes.index(mode)
 
         self.command('w', 0x00, 0x1a, 0x22, [mode])
-
-    def set_pattern_trigger_mode(self, mode='vsync'):
+        
+    def set_pattern_trigger_mode(self, mode='pattern_trigger_mode1'):
         """
         Selects the trigger type for pattern sequence.
 
@@ -297,12 +335,66 @@ class dlpc350(object):
 
         :param int mode:
             :0: "vsync"
+            "1": "pattern trigger mode1" : internally or externally generated trigger
         """
-        modes = ['vsync']
+        modes = ['vsync', 'pattern_trigger_mode1']
         if mode in modes:
             mode = modes.index(mode)
 
         self.command('w', 0x00, 0x1a, 0x23, [mode])
+   
+    def set_led_current(self, red: int, green: int, blue: int):
+        """
+        Sets the LED current for the Red, Green, and Blue LEDs using an 8-bit PWM value (0-255).
+
+        (USB: CMD2: 0x0B, CMD3: 0x01)
+
+        :param int red: Red LED current (0-255).
+        :param int green: Green LED current (0-255).
+        :param int blue: Blue LED current (0-255).
+        """
+
+        # Ensure values are within 0-255 range
+        red = max(0, min(255, red))
+        green = max(0, min(255, green))
+        blue = max(0, min(255, blue))
+
+        # Send command with 3-byte data payload
+        self.command('w', 0x00, 0x0B, 0x01, [red, green, blue])
+    
+    def set_led_pwm_polarity(self, polarity: int):
+        """
+        Sets the PWM polarity for the LEDs.
+        
+        :param int polarity: 0 for normal polarity, 1 for inverted polarity.
+        """
+        polarity = max(0, min(1, polarity))  # Ensure the value is 0 or 1
+        self.command('w', 0x00, 0x1A, 0x05, [polarity])
+        
+    def set_led_control_mode(self, automatic: bool, red: bool = True, green: bool = True, blue: bool = True):
+        """
+        Sets the LED selection mode to Automatic (controlled by sequencer) or Manual, 
+        and enables/disables individual LEDs.
+
+        (USB: CMD2: 0x1A, CMD3: 0x07)
+
+        :param bool automatic: 
+            - True: Automatic mode (sequencer controls LEDs).
+            - False: Manual mode (controlled by software via bits 2:0).
+        :param bool red: Enable Red LED (default: True).
+        :param bool green: Enable Green LED (default: True).
+        :param bool blue: Enable Blue LED (default: True).
+        """
+        red_bit = 1 if red else 0
+        green_bit = 1 if green else 0
+        blue_bit = 1 if blue else 0
+        mode_bit = 1 if automatic else 0  # Automatic or manual control mode
+
+        # Construct the byte with bits (R, G, B, Mode)
+        led_control_byte = (mode_bit << 3) | (blue_bit << 2) | (green_bit << 1) | red_bit
+
+        # Send the command
+        self.command('w', 0x00, 0x1A, 0x07, [led_control_byte])
 
     def set_gamma_correction(self, apply_gamma=True):
         """
@@ -425,6 +517,25 @@ class dlpc350(object):
         mbox_num = bits_to_bytes(conv_len(mbox_num, 8))
         self.command('w', 0x00, 0x1a, 0x33, mbox_num)
 
+    def send_pattern_image_index(self, image_indices):
+        """
+        Writes image indices to the Pattern Display LUT Data (USB: CMD2: 0x1A, CMD3: 0x34).
+
+        :param list image_indices: List of image indices (0-based) to be used in pattern sequence.
+        """
+
+        # Convert image indices to a bit string
+        bit_string = ''.join(conv_len(index, 8) for index in image_indices)
+
+        # Convert the bit string to a byte list
+        payload = bits_to_bytes(bit_string)
+
+        # Send the converted payload
+        self.command('w', 0x00, 0x1A, 0x34, payload)
+        
+        # payload = bytes(image_indices)
+        # self.command('w', 0x00, 0x1A, 0x34, payload)
+    
     def send_pattern_lut(self,
                          trig_type,
                          pat_num,
@@ -432,7 +543,7 @@ class dlpc350(object):
                          led_select,
                          do_invert_pat=False,
                          do_insert_black=False,
-                         do_buf_swap=False,
+                         do_buf_swap=True,
                          do_trig_out_prev=False):
         """
         Mailbox content to setup pattern definition. See table 2-65 in programmer's guide for detailed description of
@@ -476,6 +587,7 @@ class dlpc350(object):
             :4: 0b100 Blue
             :5: 0b101 Magenta (Blue + Red)
             :6: 0b110 Cyan (Blue + Green)
+            :7: 0b111 White (Blue + Green + Red)
 
         :param bool do_invert_pat:
             :True: Invert pattern.
@@ -523,88 +635,84 @@ class dlpc350(object):
 
         self.command('w', 0x00, 0x1a, 0x34, payload)
 
+def pattern_sequence_final(input_mode='pattern',
+                            input_source='flash',
+                            num_pats = 8,
+                            trigger_type='pattern_trigger_mode1',
+                            exposure_period = 100000,
+                            frame_period = 100000,
+                            bit_depth= [1,1,1,1,1,1,1,1],
+                            led_color= 0b111,  # BGR
+                            trig_type = 0,
+                            **kwargs
+                            ):
 
-def pattern_mode(input_mode='pattern',
-                 input_type='video',
-                 num_pats=3,
-                 trigger_type='vsync',
-                 period=fps_to_period(222),
-                 bit_depth=7,
-                 led_color=0b111,  # BGR
-                 **kwargs
-                 ):
-    """
-    Helper function to setup a video pattern mode.
-
-    :param str input_mode: See :meth:`pycrafter4500.set_display_mode`
-    :param str input_type: See :meth:`pycrafter4500.set_pattern_input_source`
-    :param int num_pats: See :meth:`pycrafter4500.set_pattern_config`
-    :param str trigger_type: See :meth:`pycrafter4500.set_pattern_trigger_mode`
-    :param int period: See :meth:`pycrafter4500.set_exposure_frame_period`
-    :param int bit_depth: See :meth:`pycrafter4500.send_pattern_lut`
-    :param int led_color: See :meth:`pycrafter4500.send_pattern_lut`
-    """
-
-    if 'fps' in kwargs:
-        period = fps_to_period(kwargs['fps'])
-
-    with connect_usb() as lcr:
-        assert bit_depth in [1, 2, 4, 7, 8]
-
-        # before proceeding to change params, need to stop pattern sequence mode
+    
+    with connect_usb() as lcr:    
+    
+        # 1. Stop Pattern Display Before Configuring
         lcr.pattern_display('stop')
+        time.sleep(0.2)
 
-        # 1: pattern display mode
+        # 2. Set Display Mode to Pattern
         lcr.set_display_mode(input_mode)
-
-        # 2: pattern display from external video
-        lcr.set_pattern_input_source(input_type)
-
-        # 3: setup number of luts
+        
+        # 3. Set LED Configurations
+        lcr.set_led_pwm_polarity(1)  # Ensures that PWM=0 means LED OFF
+        # Set LED currents (from image settings)
+        lcr.set_led_current(red=100, green=100, blue=100)
+        # Set LED selection mode (manual selection)
+        lcr.set_led_control_mode(automatic=False, red=True, green=True, blue=True)
+        
+        # 4. Set Pattern Input Source (Before LUT Configuration)
+        lcr.set_pattern_input_source(input_source)
+        # Set pattern input source to flash
+        lcr.set_pattern_display_data_input_source(input_source)
+        
+        # 5. Set Pattern Configuration
         lcr.set_pattern_config(num_lut_entries=num_pats,
-                               num_pats_for_trig_out2=num_pats)
+                               num_pats_for_trig_out2=num_pats,
+                               num_images=num_pats,
+                               do_repeat = True)
 
-        # 4: Pattern trigger mode selection
+        # 6. Set Pattern Trigger Mode
         lcr.set_pattern_trigger_mode(trigger_type)
 
-        # 5: Set exposure and frame rate
-        lcr.set_exposure_frame_period(period, period)
+        # 7. Set Exposure and Frame Period
+        lcr.set_exposure_frame_period(exposure_period=exposure_period, frame_period=frame_period)
 
-        # 6: Skip setting up image indexes
-        pass
+        # 8. Configure Image Index LUT (Open Mailbox)
+        lcr.open_mailbox(1)  # Open mailbox for image index configuration
+        lcr.mailbox_set_address(0)
+        lcr.send_pattern_image_index([7, 6, 5, 4, 3, 2, 1, 0])  # Send indices uploaded in Firmware
 
-        # 7: Set up LUT
+        lcr.open_mailbox(0)  # Close mailbox
+
+        # 9. Apply Image LUT Validation
+        lcr.command('w', 0x00, 0x1A, 0x1A, [0x00])  # Image LUT validation
+
+        # 10. Configure Pattern LUT
         lcr.open_mailbox(2)
-
-        bit_map = {1: [7, 15, 23],
-                   2: [3, 7, 11],
-                   4: [1, 3, 5],
-                   7: [0, 1, 2],
-                   8: [0, 1, 2]}
-
-        for i in range(3):
-            if i == 0:
-                trig_type = 1
-            else:
-                trig_type = 3
-
+        for i in range(num_pats):
             lcr.mailbox_set_address(i)
             lcr.send_pattern_lut(trig_type=trig_type,
-                                 pat_num=bit_map[bit_depth][i],
-                                 bit_depth=bit_depth,
-                                 led_select=led_color)
-
+                                 pat_num=i,
+                                 bit_depth=bit_depth[i],
+                                 led_select=led_color,
+                                 do_invert_pat=False,
+                                 do_insert_black=False,
+                                 do_buf_swap=True,
+                                 do_trig_out_prev=False)
         lcr.open_mailbox(0)
-
-        # 8/9: validate
+        
+        # 11. Validate Pattern LUT
         lcr.start_pattern_lut_validate()
-
+        time.sleep(2)
+        
         # 10: start sequence
         lcr.pattern_display('start')
-        # idk why you need a second start coming out of video mode
-        lcr.pattern_display('start')
-
-
+        time.sleep(3)
+        
 def video_mode():
     """
     Puts LCR4500 into video mode.
@@ -613,15 +721,13 @@ def video_mode():
         lcr.pattern_display('stop')
         lcr.set_display_mode('video')
 
-
 def power_down():
     """
     Puts LCR4500 into standby mode.
     """
     with connect_usb() as lcr:
         lcr.pattern_display('stop')
-        lcr.set_power_mode(do_standby=True)
-
+        # lcr.set_power_mode(do_standby=True)
 
 def power_up():
     """
@@ -629,7 +735,6 @@ def power_up():
     """
     with connect_usb() as lcr:
         lcr.set_power_mode(do_standby=False)
-
 
 def set_gamma(value):
     """
