@@ -10,7 +10,7 @@ Check the documents and code to modify more...
 
 - The DLPC 350 is the controller chip on the LCR 4500.
 
-- [TI DLPC 350 documentation](http://www.ti.com/product/DLPC350/technicaldocuments)
+- [TI DLPC 350 documentation](http://www.ti.com/product/DLPC350/technicaldocuments) (DLPC350 Programmer’s Guide (Rev. G))
 
 # Install and Usage
 
