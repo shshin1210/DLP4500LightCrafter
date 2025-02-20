@@ -18,3 +18,4 @@ Follow the Install and Usage part introduced in [SivyerLab](https://github.com/S
 
 # Pattern sequence mode
 
+Run ```main.py```
