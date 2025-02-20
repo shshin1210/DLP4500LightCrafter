@@ -33,3 +33,7 @@ I have added following functions to implement pattern sequence mode. Check the d
 - send_pattern_image_index
 
 - pattern_sequence_final
+
+# Other comments..
+
+I still have problems projecting the sequential patterns repeatedly. I will further update some of the codes.
